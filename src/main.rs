@@ -5,6 +5,25 @@ use std::io::Write;
 use std::thread;
 use std::sync::{Arc, Mutex};
 
+#[derive(Clone)]
+struct Mailbox {
+    inner: Vec<String>,
+}
+
+impl Mailbox {
+    fn new() -> Mailbox {
+        Mailbox { inner: Vec::new() }
+    }
+
+    fn write(&mut self, message: String) {
+        self.inner.push(message);
+    }
+
+    fn read(&mut self) -> Option<String> {
+        self.inner.pop()
+    }
+}
+
 struct SyncedMailbox {
     inner: Mutex<Vec<String>>,
 }
@@ -29,15 +48,14 @@ impl SyncedMailbox {
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:7200").unwrap();
 
-    let storage = Arc::new(SyncedMailbox::new());
+    // let storage = Arc::new(SyncedMailbox::new());
+    // let mut storage = Arc::new(Mailbox::new());
+    let mut storage = Mailbox::new();
 
     for stream in listener.incoming() {
         match stream {
             Ok(mut s) => {
-                let local_storage = storage.clone();
-                thread::spawn(move || {
-                    handle(&mut s, &local_storage);
-                });
+                handle(&mut s, &mut storage);
             }
             Err(e) => {
                 println!("A connection failed. Error: {}", e);
@@ -46,7 +64,7 @@ fn main() {
     }
 }
 
-fn handle(stream: &mut TcpStream, storage: &SyncedMailbox) {
+fn handle(stream: &mut TcpStream, storage: &mut Mailbox) {
     let message = read_message(stream);
     match message.trim() {
         "READ" => {
@@ -58,7 +76,7 @@ fn handle(stream: &mut TcpStream, storage: &SyncedMailbox) {
     }
 }
 
-fn handle_read(stream: &mut TcpStream, storage: &SyncedMailbox) {
+fn handle_read(stream: &mut TcpStream, storage: &mut Mailbox) {
     let data = storage.read();
 
     match data {
@@ -67,7 +85,7 @@ fn handle_read(stream: &mut TcpStream, storage: &SyncedMailbox) {
     }.ok().expect("Write failed!");
 }
 
-fn handle_write(message: String, storage: &SyncedMailbox) {
+fn handle_write(message: String, storage: &mut Mailbox) {
     storage.write(message);
 }
 
